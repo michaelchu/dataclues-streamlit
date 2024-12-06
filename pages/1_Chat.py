@@ -19,6 +19,7 @@ if "messages" not in st.session_state:
 if "memory" not in st.session_state:
     st.session_state.memory = ConversationBufferMemory(
         memory_key="chat_history",
+        output_key="answer",
         return_messages=True
     )
 
@@ -35,12 +36,24 @@ if os.path.exists(PERSIST_DIR):
         collection_name="my_collection"
     )
     
+    # Configure retriever with improved search parameters
+    retriever = vectorstore.as_retriever(
+        search_type="mmr",  # Use MMR for better diversity in results
+        search_kwargs={
+            "k": 12,  # Increased number of documents to return
+            "fetch_k": 30,  # Fetch more documents for MMR to choose from
+            "lambda_mult": 0.5  # Lower lambda for more diversity (0.0-1.0)
+        }
+    )
+    
     # Initialize the conversation chain with persisted memory
     llm = ChatOpenAI(temperature=0)
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=vectorstore.as_retriever(),
+        retriever=retriever,
         memory=st.session_state.memory,
+        return_source_documents=True,
+        verbose=True
     )
     
     # Display chat messages
@@ -58,6 +71,17 @@ if os.path.exists(PERSIST_DIR):
             with st.spinner("Thinking..."):
                 response = conversation_chain({"question": prompt})
                 msg = response["answer"]
+                
+                # Display only source filenames
+                if "source_documents" in response:
+                    sources = set()
+                    for doc in response["source_documents"]:
+                        if "source" in doc.metadata:
+                            sources.add(doc.metadata["source"])
+                    
+                    if sources:
+                        msg += "\n\nSources: " + ", ".join(sources)
+                
                 st.write(msg)
                 
         st.session_state.messages.append({"role": "assistant", "content": msg})
@@ -67,6 +91,7 @@ if os.path.exists(PERSIST_DIR):
         st.session_state.messages = [{"role": "assistant", "content": "Hello! I'm ready to help you with your documents. What would you like to know?"}]
         st.session_state.memory = ConversationBufferMemory(
             memory_key="chat_history",
+            output_key="answer",
             return_messages=True
         )
         st.rerun()

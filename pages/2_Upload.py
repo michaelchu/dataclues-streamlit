@@ -15,7 +15,8 @@ import os
 PERSIST_DIR = "chroma_db"
 
 def process_documents(files):
-    text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    # Increased chunk size and overlap for better context retention
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     all_docs = []
     
     for f in files:
@@ -164,10 +165,23 @@ if uploaded_files:
             )
             
             llm = ChatOpenAI(openai_api_key=os.getenv("OPENAI_API_KEY"), temperature=0)
+            
+            # Configure retriever with improved search parameters
+            retriever = vectorstore.as_retriever(
+                search_type="mmr",  # Use MMR for better diversity in results
+                search_kwargs={
+                    "k": 12,  # Increased number of documents
+                    "fetch_k": 30,  # Fetch more documents for MMR to choose from
+                    "lambda_mult": 0.5  # Lower lambda for more diversity
+                }
+            )
+            
             conversation_chain = ConversationalRetrievalChain.from_llm(
                 llm=llm,
-                retriever=vectorstore.as_retriever(),
+                retriever=retriever,
                 memory=memory,
+                return_source_documents=True,
+                verbose=True
             )
             
             # Store in session_state
@@ -176,7 +190,7 @@ if uploaded_files:
             st.session_state.uploaded_files = uploaded_files
             
             st.success("✅ Documents processed successfully! You can now go to the Chat page to ask questions.")
-            st.rerun()  # Updated from experimental_rerun to rerun
+            st.rerun()
 else:
     st.info("👆 Upload your documents to get started!")
 
@@ -194,7 +208,7 @@ if existing_docs:
             if st.button("🗑️ Delete", key=f"delete_{doc_name}"):
                 if delete_document(doc_name):
                     st.success(f"Deleted {doc_name}")
-                    st.rerun()  # Updated from experimental_rerun to rerun
+                    st.rerun()
                 else:
                     st.error(f"Failed to delete {doc_name}")
 else:
